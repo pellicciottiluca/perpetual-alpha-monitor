@@ -11,11 +11,13 @@ function dl(rows){return rows.map(([a,b])=>`<dt>${esc(a)}</dt><dd>${esc(b)}</dd>
 function stage(s){return ({not_started:'Non avviato',stopped:'Fermo',failed:'Errore',ready:'Pronto',blocked:'Da verificare',paper_running:'Paper attivo',running:'Attivo',read_only_plan:'Solo lettura',stale:'Dati in ritardo',starting:'In avvio',degraded:'Letture in recupero'})[s]||s||'—'}
 // Freshness uses HTTP server time and monotonic elapsed time, never the viewer's clock.
 let sourceFreshness={generated:null,observedAt:0,ageAtObservation:0,confirmed:false};
-function observeSource(payload,httpDate){
+function observeSource(payload,httpDate,cacheControl){
  const now=performance.now(),serverTime=Date.parse(httpDate||'');
  const changed=sourceFreshness.generated!==payload.generated_ms;
  const progressed=sourceFreshness.generated!=null&&payload.generated_ms>sourceFreshness.generated;
  if(changed)sourceFreshness={generated:payload.generated_ms,observedAt:now,ageAtObservation:0,confirmed:progressed};
+ const maxAge=/max-age=(\d+)/i.exec(cacheControl||'');
+ sourceFreshness.budget=Math.max(180000,Math.min(300000,maxAge?Number(maxAge[1])*1000:0)+120000);
  if(Number.isFinite(serverTime)){
   sourceFreshness.ageAtObservation=Math.max(0,serverTime-payload.generated_ms);
   sourceFreshness.observedAt=now;sourceFreshness.confirmed=true;
@@ -25,7 +27,7 @@ function sourceProblem(unavailable){
  if(unavailable)return 'Aggiornamento della pagina non riuscito. Lo stato del processo non risulta ricontrollato.';
  if(!Number.isFinite(data.generated_ms))return 'Timestamp della fonte mancante o non valido.';
  if(!sourceFreshness.confirmed)return 'Verifica della freschezza in corso: attendo il prossimo campione pubblicato.';
- if(sourceFreshness.ageAtObservation+performance.now()-sourceFreshness.observedAt>180000)return 'La fonte non avanza da oltre tre minuti: lo stato mostrato potrebbe essere cambiato.';
+ if(sourceFreshness.ageAtObservation+performance.now()-sourceFreshness.observedAt>(sourceFreshness.budget||180000))return 'La fonte non avanza oltre il ritardo di cache previsto: lo stato mostrato potrebbe essere cambiato.';
  return null;
 }
 function renderSupervisor(unavailable=false){
@@ -99,6 +101,6 @@ function renderMarket(){const m=data.markets.find(m=>m.coin===asset);if(!m)retur
  chart('funding-chart',[{name:m.coin.slice(4),color:'#7654cb',points:m.history.map(p=>({time:p.time,value:p.rate*100}))}],'value','rate');
  $('book-title').textContent='Book · '+m.coin.slice(4);for(const side of ['bids','asks'])$(side).innerHTML=m[side].map(l=>`<div class="book-line"><b class="${side==='bids'?'positive':'negative'}">${fmt(l.price,4)}</b><span>${fmt(l.quantity,5)}</span></div>`).join('');$('book-age').textContent=(m.stale?'Book non recente · ':'')+'Età: '+fmt(m.age_seconds,0)+' s · primi cinque livelli osservati.';
 }
-async function refresh(){try{const url=window.FUNDING_ENDPOINT+(window.FUNDING_ENDPOINT.includes('?')?'&':'?')+'v='+Math.floor(Date.now()/30000);const response=await fetch(url,{cache:'no-store',credentials:'omit'});if(!response.ok)throw Error('HTTP '+response.status);data=await response.json();observeSource(data,response.headers.get('Date'));render()}catch(e){if(data)renderSupervisor(true);$('banner').className='notice error';$('banner').textContent='Aggiornamento non riuscito. Gli eventuali valori presenti sono gli ultimi ricevuti.'}setTimeout(refresh,location.hostname==='127.0.0.1'||location.hostname==='localhost'?5000:30000)}
+async function refresh(){try{const url=window.FUNDING_ENDPOINT+(window.FUNDING_ENDPOINT.includes('?')?'&':'?')+'v='+Math.floor(Date.now()/30000);const response=await fetch(url,{cache:'no-store',credentials:'omit'});if(!response.ok)throw Error('HTTP '+response.status);data=await response.json();observeSource(data,response.headers.get('Date'),response.headers.get('Cache-Control'));render()}catch(e){if(data)renderSupervisor(true);$('banner').className='notice error';$('banner').textContent='Aggiornamento non riuscito. Gli eventuali valori presenti sono gli ultimi ricevuti.'}setTimeout(refresh,location.hostname==='127.0.0.1'||location.hostname==='localhost'?5000:30000)}
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab],.tab').forEach(e=>e.classList.remove('active'));b.classList.add('active');$(b.dataset.tab).classList.add('active');render()});
 $('portfolio-source').onchange=e=>{selected=e.target.value;renderPortfolio()};$('asset').onchange=e=>{asset=e.target.value;renderMarket()};$('window').onchange=e=>{hours=+e.target.value;render()};$('unit').onchange=e=>{unit=e.target.value;render()};window.addEventListener('resize',()=>{if(data)render()});refresh();
