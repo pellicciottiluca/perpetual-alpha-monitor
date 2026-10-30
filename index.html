@@ -1,9 +1,15 @@
 <!doctype html>
 <html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Perpetual Alpha · Funding</title><link rel="stylesheet" href="./funding.css"></head>
 <body><main>
-<header><div><div class="eyebrow">PERPETUAL ALPHA / ICAIF 2026</div><h1>Portafoglio funding</h1></div><div class="header-right"><span class="pill">TESTNET · pas / USDP</span><span id="updated">Caricamento dati…</span></div></header>
+<header><div><div class="eyebrow">PERPETUAL ALPHA / ICAIF 2026</div><h1>Portafoglio funding</h1></div><div class="header-right"><span class="pill">TESTNET · pas / USDP</span><span id="supervisor-badge" class="pill supervisor-pill" role="status">Supervisore · verifica…</span><span id="updated">Caricamento dati…</span></div></header>
 <div id="banner" class="notice">Connessione alla fonte…</div>
 <section class="kpis" id="account-kpis" aria-label="Conto della competizione"></section>
+<section id="supervisor-panel" class="panel supervisor-panel" aria-labelledby="supervisor-title">
+<div class="supervisor-head"><div><h2 id="supervisor-title">Supervisore automatico</h2><p id="supervisor-summary" class="muted small">Lettura stato…</p></div><span id="supervisor-state" class="supervisor-state">—</span></div>
+<div id="supervisor-metrics" class="supervisor-metrics"></div>
+<p id="supervisor-issue" class="small" hidden></p>
+<details><summary>Dettagli del controllo</summary><dl id="supervisor-details"></dl><p class="small muted">Attendere tra due revisioni è normale. Il supervisore diagnostica problemi tecnici; non garantisce un profitto e non annulla gli stop manuali.</p></details>
+</section>
 <nav aria-label="Viste"><button class="active" data-tab="overview">Andamento</button><button data-tab="portfolio">Portafoglio e operazioni</button><button data-tab="markets">Funding e book</button><button data-tab="system">Strategia e sistema</button></nav>
 <section id="overview" class="tab active">
 <div class="section-head"><div><h2>Rendimento netto</h2><p>Ogni serie parte dal proprio avvio. I paper includono costi e funding stimati.</p></div><div class="controls"><select id="window" aria-label="Intervallo grafico"><option value="0">Tutta la sessione</option><option value="1">Ultima ora</option><option value="6">Ultime 6 ore</option><option value="24">Ultime 24 ore</option></select><select id="unit" aria-label="Unità grafico"><option value="net_pnl">USDP</option><option value="return_percent">%</option></select></div></div>

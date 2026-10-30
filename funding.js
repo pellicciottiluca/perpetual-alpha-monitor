@@ -9,6 +9,24 @@ let data=null,selected='leveraged',asset='pas:ETH',unit='net_pnl',hours=0;
 function kpi(label,value,sub='',cls=''){return `<div class="kpi"><label>${esc(label)}</label><strong class="${cls}">${esc(value)}</strong><small>${esc(sub)}</small></div>`}
 function dl(rows){return rows.map(([a,b])=>`<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}
 function stage(s){return ({not_started:'Non avviato',stopped:'Fermo',failed:'Errore',ready:'Pronto',blocked:'Da verificare',paper_running:'Paper attivo',running:'Attivo',read_only_plan:'Solo lettura',stale:'Dati in ritardo',starting:'In avvio',degraded:'Letture in recupero'})[s]||s||'—'}
+function renderSupervisor(){
+ const s=data.supervisor||{},publicationOld=!Number.isFinite(data.generated_ms)||Date.now()-data.generated_ms>180000;
+ const state=publicationOld?'unverified':(s.state||'unknown');
+ const names={waiting:'Attivo · in attesa',reviewing:'Verifica in corso',stopped:'Fermo',stopping:'Arresto in corso',failed:'Processo non attivo',overdue:'Controllo in ritardo',degraded:'Ultimo controllo con problemi',unverified:'Stato non verificabile',not_started:'Non avviato',starting:'In avvio',unknown:'Stato non disponibile'};
+ const tone=['failed','overdue'].includes(state)?'error':['degraded','unverified'].includes(state)?'warn':['waiting','reviewing'].includes(state)?'ok':'neutral';
+ const notes={waiting:'Il processo è attivo. L’attesa tra due controlli è normale.',reviewing:'GPT sta analizzando lo stato e i sorgenti del sistema.',stopped:'Il supervisore è fermo. Il trader ha un processo e uno stato separati.',stopping:'È stato richiesto lo stop del solo supervisore.',failed:'Il processo atteso non risulta attivo: nessuna nuova revisione è garantita.',overdue:'La revisione non è partita o non è terminata entro il tempo previsto.',degraded:'Il processo è attivo, ma l’ultima revisione richiede attenzione.',unverified:publicationOld?'La pubblicazione è in ritardo: questo stato potrebbe essere cambiato.':'Non è possibile confermare lo stato del processo.',not_started:'Nessun avvio registrato per il supervisore.',starting:'Avvio del supervisore in corso.',unknown:'La fonte non fornisce ancora lo stato del supervisore.'};
+ const actions={none:'Nessun intervento necessario',restart_trader:'Ripresa del trader',repair_and_restart:'Correzione e ripresa',restart_helpers:'Ripristino servizi',report_only:'Segnalazione senza intervento'};
+ const outcomes={complete:'Completato',blocked_or_failed:'Bloccato o fallito',started:'In corso'};
+ const issues={process_not_running:'Processo assente: il supervisore non sta eseguendo i controlli.',process_unverified:'Accesso ai metadati del processo non disponibile.',clock_mismatch:'Timestamp incoerente: verificare l’orologio del PC.',review_overdue:'Scadenza del controllo superata.',tests_failed:'La correzione proposta non ha superato i test e non è stata applicata.',source_conflict:'I sorgenti sono cambiati durante la revisione: nessuna sovrascrittura automatica.',reconciliation_failed:'Riconciliazione del conto non completata: riavvio non autorizzato dal controller.',model_unavailable:'Revisione GPT non disponibile: verificare accesso, quota o runtime.',review_timeout:'La revisione ha superato il tempo massimo.',manual_stop:'Uno stop manuale impedisce il riavvio automatico.',scope_rejected:'La correzione proposta è fuori dall’ambito automatico.',restart_failed:'Il riavvio non è stato confermato: serve verificare la sessione.',review_failed:'Il ciclo non è riuscito a completare tutti i controlli.',review_inconclusive:'La revisione segnala un problema che non ha potuto verificare o correggere automaticamente.',review_warning:'L’ultima revisione contiene una segnalazione da controllare.'};
+ $('supervisor-badge').className='pill supervisor-pill '+tone;$('supervisor-badge').textContent='Supervisore · '+(names[state]||state);
+ $('supervisor-state').className='supervisor-state '+tone;$('supervisor-state').textContent=names[state]||state;
+ $('supervisor-summary').textContent=(s.model==='gpt-6.1-sol'?'GPT‑6.1 Sol'+(s.reasoning_effort?' · '+s.reasoning_effort:'')+' · ':'')+(notes[state]||'');
+ const metrics=[['Ultimo controllo completato',date(s.last_review_ms)],['Prossimo controllo',date(s.next_review_ms)],['Ultimo esito',outcomes[s.last_outcome]||'—'],['Ultima azione',actions[s.last_action]||'—']];
+ $('supervisor-metrics').innerHTML=metrics.map(([label,value])=>`<div><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join('');
+ const issue=$('supervisor-issue');issue.hidden=!s.issue;issue.textContent=issues[s.issue]||'Segnalazione da verificare.';issue.className='small supervisor-issue '+(tone==='error'?'negative':'');
+ const yes=v=>v===true?'Sì':v===false?'No':'Non registrato';
+ $('supervisor-details').innerHTML=dl([['Processo verificato attivo',yes(s.worker_alive)],['Frequenza',s.interval_seconds?fmt(s.interval_seconds/60,0)+' minuti':'—'],['Thread dedicato indipendente',s.independent_thread?'Verificato':'Non verificato'],['Stato operativo aggiornato',date(s.updated_ms)],['File corretti nell’ultimo ciclo',s.last_review_ms?fmt(s.changed_files_count,0):'—'],['Test della correzione',s.tests_passed==null?'Nessuna correzione testata nel ciclo':s.tests_passed?'Superati':'Falliti'],['Trader riavviato nell’ultimo ciclo',s.last_review_ms?yes(s.trader_restarted):'—'],['Report notificato su Telegram',yes(s.telegram_notified)]]);
+}
 function chart(id,series,field,kind='money'){
  const el=$(id),W=Math.max(el.clientWidth,300),H=el.clientHeight,L=66,R=18,T=18,B=34;
  const cutoff=hours?Date.now()-hours*3600000:0;
@@ -31,6 +49,7 @@ function chart(id,series,field,kind='money'){
  el.onmouseleave=()=>{$('tooltip').hidden=true};
 }
 function render(){if(!data)return;const a=data.account,lh=data.live_health,ph=data.paper_health;
+ renderSupervisor();
  $('updated').textContent='Fonte: '+date(a.asof_ms);
  const stale=(a.age_seconds??Infinity)>180;const banner=$('banner');banner.className='notice'+(stale?' warn':lh.state==='failed'?' error':'');
  banner.textContent=stale?'Dati in ritardo: sono mostrati gli ultimi valori disponibili.':lh.trading_enabled?(lh.state==='running'?'Trader testnet attivo · '+data.dex+' · monitoraggio del conto reale della competizione.':'Automazione live: '+stage(lh.state)+'. Verificare le posizioni del conto; un arresto non implica che siano chiuse.'):'Trading sul conto non avviato. '+stage(ph.state)+' · preparazione live '+(data.preflight.ready?'verificata':'da riconfermare')+'.';
