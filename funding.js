@@ -32,10 +32,11 @@ function sourceProblem(unavailable){
 }
 function renderSupervisor(unavailable=false){
  const s=data.supervisor||{},freshnessIssue=sourceProblem(unavailable),publicationOld=!!freshnessIssue;
- const state=publicationOld?'unverified':(s.state||'unknown');
- const names={waiting:'Attivo · in attesa',reviewing:'Verifica in corso',stopped:'Fermo',stopping:'Arresto in corso',failed:'Processo non attivo',overdue:'Controllo in ritardo',degraded:'Ultimo controllo con problemi',unverified:'Stato non verificabile',not_started:'Non avviato',starting:'In avvio',unknown:'Stato non disponibile'};
- const tone=['failed','overdue'].includes(state)?'error':['degraded','unverified'].includes(state)?'warn':['waiting','reviewing'].includes(state)?'ok':'neutral';
- const notes={waiting:'Il processo è attivo. L’attesa tra due controlli è normale.',reviewing:'GPT sta analizzando lo stato e i sorgenti del sistema.',stopped:'Il supervisore è fermo. Il trader ha un processo e uno stato separati.',stopping:'È stato richiesto lo stop del solo supervisore.',failed:'Il processo atteso non risulta attivo: nessuna nuova revisione è garantita.',overdue:'La revisione non è partita o non è terminata entro il tempo previsto.',degraded:'Il processo è attivo, ma l’ultima revisione richiede attenzione.',unverified:freshnessIssue||'Impossibile confermare lo stato del processo.',not_started:'Nessun avvio registrato per il supervisore.',starting:'Avvio del supervisore in corso.',unknown:'La fonte non fornisce ancora lo stato del supervisore.'};
+ const initialVerification=!unavailable&&!sourceFreshness.confirmed&&Number.isFinite(data.generated_ms)&&performance.now()-sourceFreshness.observedAt<=(sourceFreshness.budget||180000);
+ const state=publicationOld?(initialVerification&&s.worker_alive===true?'checking_updates':'unverified'):(s.state||'unknown');
+ const names={checking_updates:'Attivo all’ultima lettura',waiting:'Attivo · in attesa',reviewing:'Verifica in corso',stopped:'Fermo',stopping:'Arresto in corso',failed:'Processo non attivo',overdue:'Controllo in ritardo',degraded:'Ultimo controllo con problemi',unverified:'Stato non verificabile',not_started:'Non avviato',starting:'In avvio',unknown:'Stato non disponibile'};
+ const tone=['failed','overdue'].includes(state)?'error':['degraded','unverified','checking_updates'].includes(state)?'warn':['waiting','reviewing'].includes(state)?'ok':'neutral';
+ const notes={checking_updates:'Il processo risulta attivo nel campione ricevuto. Attendo il prossimo aggiornamento del sito per confermare che la pubblicazione continui.',waiting:'Il processo è attivo. L’attesa tra due controlli è normale.',reviewing:'GPT sta analizzando lo stato e i sorgenti del sistema.',stopped:'Il supervisore è fermo. Il trader ha un processo e uno stato separati.',stopping:'È stato richiesto lo stop del solo supervisore.',failed:'Il processo atteso non risulta attivo: nessuna nuova revisione è garantita.',overdue:'La revisione non è partita o non è terminata entro il tempo previsto.',degraded:'Il processo è attivo, ma l’ultima revisione richiede attenzione.',unverified:freshnessIssue||'Impossibile confermare lo stato del processo.',not_started:'Nessun avvio registrato per il supervisore.',starting:'Avvio del supervisore in corso.',unknown:'La fonte non fornisce ancora lo stato del supervisore.'};
  const actions={none:'Nessun intervento necessario',restart_trader:'Ripresa del trader',repair_and_restart:'Correzione e ripresa',restart_helpers:'Ripristino servizi',report_only:'Segnalazione senza intervento'};
  const outcomes={complete:'Completato',blocked_or_failed:'Bloccato o fallito',started:'In corso'};
  const issues={process_not_running:'Processo assente: il supervisore non sta eseguendo i controlli.',process_unverified:'Accesso ai metadati del processo non disponibile.',clock_mismatch:'Timestamp incoerente: verificare l’orologio del PC.',review_overdue:'Scadenza del controllo superata.',tests_failed:'La correzione proposta non ha superato i test e non è stata applicata.',source_conflict:'I sorgenti sono cambiati durante la revisione: nessuna sovrascrittura automatica.',reconciliation_failed:'Riconciliazione del conto non completata: riavvio non autorizzato dal controller.',model_unavailable:'Revisione GPT non disponibile: verificare accesso, quota o runtime.',review_timeout:'La revisione ha superato il tempo massimo.',manual_stop:'Uno stop manuale impedisce il riavvio automatico.',scope_rejected:'La correzione proposta è fuori dall’ambito automatico.',restart_failed:'Il riavvio non è stato confermato: serve verificare la sessione.',review_failed:'Il ciclo non è riuscito a completare tutti i controlli.',review_inconclusive:'La revisione segnala un problema che non ha potuto verificare o correggere automaticamente.',review_warning:'L’ultima revisione contiene una segnalazione da controllare.'};
@@ -101,6 +102,24 @@ function renderMarket(){const m=data.markets.find(m=>m.coin===asset);if(!m)retur
  chart('funding-chart',[{name:m.coin.slice(4),color:'#7654cb',points:m.history.map(p=>({time:p.time,value:p.rate*100}))}],'value','rate');
  $('book-title').textContent='Book · '+m.coin.slice(4);for(const side of ['bids','asks'])$(side).innerHTML=m[side].map(l=>`<div class="book-line"><b class="${side==='bids'?'positive':'negative'}">${fmt(l.price,4)}</b><span>${fmt(l.quantity,5)}</span></div>`).join('');$('book-age').textContent=(m.stale?'Book non recente · ':'')+'Età: '+fmt(m.age_seconds,0)+' s · primi cinque livelli osservati.';
 }
-async function refresh(){try{const url=window.FUNDING_ENDPOINT+(window.FUNDING_ENDPOINT.includes('?')?'&':'?')+'v='+Math.floor(Date.now()/30000);const response=await fetch(url,{cache:'no-store',credentials:'omit'});if(!response.ok)throw Error('HTTP '+response.status);data=await response.json();observeSource(data,response.headers.get('Date'),response.headers.get('Cache-Control'));render()}catch(e){if(data)renderSupervisor(true);$('banner').className='notice error';$('banner').textContent='Aggiornamento non riuscito. Gli eventuali valori presenti sono gli ultimi ricevuti.'}setTimeout(refresh,location.hostname==='127.0.0.1'||location.hostname==='localhost'?5000:30000)}
+async function refresh(){
+ try{
+  const url=window.FUNDING_ENDPOINT+(window.FUNDING_ENDPOINT.includes('?')?'&':'?')+'v='+Math.floor(Date.now()/30000);
+  const response=await fetch(url,{cache:'no-store',credentials:'omit'});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  const incoming=await response.json();
+  data=incoming;observeSource(data,response.headers.get('Date'),response.headers.get('Cache-Control'));
+ }catch(e){
+  if(data)renderSupervisor(true);
+  $('banner').className='notice error';$('banner').textContent='Aggiornamento non riuscito. Gli eventuali valori presenti sono gli ultimi ricevuti.';
+  setTimeout(refresh,30000);return;
+ }
+ renderSupervisor();
+ try{render()}catch(e){
+  console.error('Dashboard rendering failed',e);
+  $('banner').className='notice error';$('banner').textContent='Errore nella visualizzazione dei dati. Lo stato del supervisore indica la lettura ricevuta; aggiornare la pagina.';
+ }
+ setTimeout(refresh,location.hostname==='127.0.0.1'||location.hostname==='localhost'?5000:30000);
+}
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab],.tab').forEach(e=>e.classList.remove('active'));b.classList.add('active');$(b.dataset.tab).classList.add('active');render()});
 $('portfolio-source').onchange=e=>{selected=e.target.value;renderPortfolio()};$('asset').onchange=e=>{asset=e.target.value;renderMarket()};$('window').onchange=e=>{hours=+e.target.value;render()};$('unit').onchange=e=>{unit=e.target.value;render()};window.addEventListener('resize',()=>{if(data)render()});refresh();
